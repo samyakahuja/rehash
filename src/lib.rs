@@ -70,6 +70,33 @@ where
             .map(|&(_, ref v)| v)
     }
 
+    /// Returns true if the key is in the map, false otherwise.
+    pub fn contains_key(&self, key: &K) -> bool {
+        let bucket = self.bucket(key);
+        self.buckets[bucket]
+            .iter()
+            .any(|&(ref ekey, _)| ekey == key)
+    }
+
+    /// Removes a key from the map, returning the value at the key if the key was previously in the
+    /// map.
+    pub fn remove(&mut self, key: &K) -> Option<V> {
+        let bucket = self.bucket(key);
+        let bucket = &mut self.buckets[bucket];
+        let i = bucket.iter().position(|&(ref ekey, _)| ekey == key)?;
+        self.items -= 1;
+        Some(bucket.swap_remove(i).1)
+    }
+
+    /// Returns the number of items that are currently in the map.
+    pub fn len(&self) -> usize {
+        self.items
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items == 0
+    }
+
     fn resize(&mut self) {
         let target_size = match self.buckets.len() {
             0 => INITIAL_BUCKETS,
@@ -95,6 +122,50 @@ where
     }
 }
 
+pub struct Iter<'a, K, V> {
+    map: &'a HashMap<K, V>,
+    bucket: usize,
+    at: usize,
+}
+
+impl<'a, K, V> Iterator for Iter<'a, K, V> {
+    type Item = (&'a K, &'a V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.map.buckets.get(self.bucket) {
+                Some(bucket) => {
+                    match bucket.get(self.at) {
+                        Some(&(ref k, ref v)) => {
+                            self.at += 1;
+                            break Some((k, v));
+                        },
+                        // no more items in the bucket, move to next bucket
+                        None => {
+                            self.bucket += 1;
+                            self.at = 0;
+                            continue;
+                        },
+                    }
+                },
+                None => break None,
+            }
+        }
+    }
+}
+
+impl<'a, K, V> IntoIterator for &'a HashMap<K, V> {
+    type Item = (&'a K, &'a V);
+    type IntoIter = Iter<'a, K, V>;
+    fn into_iter(self) -> Self::IntoIter {
+        Iter {
+            map: self,
+            bucket: 0,
+            at: 0,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,7 +173,39 @@ mod tests {
     #[test]
     fn insert() {
         let mut map = HashMap::new();
+
+        assert!(map.is_empty());
+        assert_eq!(map.len(), 0);
+
         map.insert("foo", 42);
-        assert_eq!(map.get(&"foo"), Some(&42))
+
+        assert!(!map.is_empty());
+        assert_eq!(map.len(), 1);
+
+        assert_eq!(map.get(&"foo"), Some(&42));
+        assert_eq!(map.remove(&"foo"), Some(42));
+        assert_eq!(map.get(&"foo"), None);
+
+        assert!(map.is_empty());
+        assert_eq!(map.len(), 0);
+    }
+
+    #[test]
+    fn iter() {
+        let mut map = HashMap::new();
+        map.insert("foo", 42);
+        map.insert("bar", 43);
+        map.insert("baz", 44);
+        map.insert("quo", 45);
+        for (&k, &v) in &map {
+            match k {
+                "foo" => assert_eq!(v, 42),
+                "bar" => assert_eq!(v, 43),
+                "baz" => assert_eq!(v, 44),
+                "quo" => assert_eq!(v, 45),
+                _ => unreachable!(),
+            }
+        }
+        assert_eq!((&map).into_iter().count(), 4);
     }
 }
