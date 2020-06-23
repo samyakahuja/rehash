@@ -1,6 +1,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::mem;
+use std::borrow::Borrow;
 
 const INITIAL_BUCKETS: usize = 1;
 
@@ -24,7 +25,12 @@ impl<K, V> HashMap<K, V>
 where
     K: Hash + Eq,
 {
-    fn bucket(&self, key: &K) -> usize {
+    /// We need K and Q to have implementations of the Hash and Eq traits that produce identical results
+    fn bucket<Q>(&self, key: &Q) -> usize
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
         // need to create a new hasher everytime for a fresh hash value.
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
@@ -62,28 +68,41 @@ where
     }
 
     /// Returns a reference to the value corresponding to the key.
-    pub fn get(&self, key: &K) -> Option<&V> {
+    /// K can be borrowed as Q, so that you don't always have to provide a reference to a K
+    pub fn get<Q>(&self, key: &Q) -> Option<&V> 
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
         let bucket = self.bucket(key);
         self.buckets[bucket]
             .iter()
-            .find(|&(ref ekey, _)| ekey == key)
+            .find(|&(ref ekey, _)| ekey.borrow() == key)
             .map(|&(_, ref v)| v)
     }
 
     /// Returns true if the key is in the map, false otherwise.
-    pub fn contains_key(&self, key: &K) -> bool {
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
         let bucket = self.bucket(key);
         self.buckets[bucket]
             .iter()
-            .any(|&(ref ekey, _)| ekey == key)
+            .any(|&(ref ekey, _)| ekey.borrow() == key)
     }
 
     /// Removes a key from the map, returning the value at the key if the key was previously in the
     /// map.
-    pub fn remove(&mut self, key: &K) -> Option<V> {
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
         let bucket = self.bucket(key);
         let bucket = &mut self.buckets[bucket];
-        let i = bucket.iter().position(|&(ref ekey, _)| ekey == key)?;
+        let i = bucket.iter().position(|&(ref ekey, _)| ekey.borrow() == key)?;
         self.items -= 1;
         Some(bucket.swap_remove(i).1)
     }
