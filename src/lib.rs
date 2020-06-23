@@ -26,16 +26,19 @@ where
     K: Hash + Eq,
 {
     /// We need K and Q to have implementations of the Hash and Eq traits that produce identical results
-    fn bucket<Q>(&self, key: &Q) -> usize
+    fn bucket<Q>(&self, key: &Q) -> Option<usize>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
+        if self.buckets.is_empty() {
+            return None;
+        }
         // need to create a new hasher everytime for a fresh hash value.
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
         // TODO: Implement something better than modulo
-        (hasher.finish() % self.buckets.len() as u64) as usize
+        Some((hasher.finish() % self.buckets.len() as u64) as usize)
     }
 
     /// Inserts a key-value pair into the map.
@@ -49,10 +52,8 @@ where
             self.resize();
         }
 
-        let bucket = self.bucket(&key);
+        let bucket = self.bucket(&key).expect("");
         let bucket: &mut Vec<(K, V)> = &mut self.buckets[bucket];
-
-        self.items += 1;
 
         // `&mut` in pattern matching dereferences the tuple it gets from the iterator
         // with `ref`, ekey is borrowed instead of moved in the pattern.
@@ -63,6 +64,7 @@ where
             }
         }
 
+        self.items += 1;
         bucket.push((key, value));
         None
     }
@@ -74,7 +76,7 @@ where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let bucket = self.bucket(key);
+        let bucket = self.bucket(key)?;
         self.buckets[bucket]
             .iter()
             .find(|&(ref ekey, _)| ekey.borrow() == key)
@@ -87,10 +89,7 @@ where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let bucket = self.bucket(key);
-        self.buckets[bucket]
-            .iter()
-            .any(|&(ref ekey, _)| ekey.borrow() == key)
+        self.get(key).is_some()
     }
 
     /// Removes a key from the map, returning the value at the key if the key was previously in the
@@ -100,7 +99,7 @@ where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let bucket = self.bucket(key);
+        let bucket = self.bucket(key)?;
         let bucket = &mut self.buckets[bucket];
         let i = bucket.iter().position(|&(ref ekey, _)| ekey.borrow() == key)?;
         self.items -= 1;
@@ -226,5 +225,13 @@ mod tests {
             }
         }
         assert_eq!((&map).into_iter().count(), 4);
+    }
+
+    #[test]
+    fn empty_hashmap() {
+        let mut map = HashMap::<String, String>::new();
+        assert_eq!(map.get("key"), None);
+        assert_eq!(map.contains_key("key"), false);
+        assert_eq!(map.remove("key"), None);
     }
 }
